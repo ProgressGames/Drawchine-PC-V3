@@ -1,0 +1,285 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Drawing</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-right: 20px;
+        }
+        canvas {
+            border: 1px solid black;
+            cursor: none; /* Hide default cursor */
+        }
+        button, input {
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="colorPicker">Choose Color:</label>
+        <input type="color" id="colorPicker" value="#000000">
+        <button onclick="changeBrushSize()">Change Brush Size</button>
+        <button onclick="toggleEraser()">Eraser</button>
+        <button onclick="cleanCanvas()">Clean all</button>
+        <button onclick="toggleDrawLine()">Draw Line</button>
+        <button onclick="toggleTextMode()">Text</button> <!-- New button for adding text -->
+    </div>
+    <div style="position: relative;">
+        <canvas id="drawingCanvas" width="1100" height="720"></canvas>
+        <canvas id="cursorCanvas" width="1100" height="720" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    </div>
+    <script>
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const cursorCanvas = document.getElementById('cursorCanvas');
+        const drawingCtx = drawingCanvas.getContext('2d');
+        const cursorCtx = cursorCanvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const eraserButton = document.querySelectorAll('button')[1];
+        const drawLineButton = document.querySelectorAll('button')[4];
+        const textButton = document.querySelectorAll('button')[5];
+        const downloadButton = document.createElement('button');
+
+
+        let isDrawing = false;
+        let isErasing = false;
+        let drawLineMode = false;
+        let textMode = false;
+        let currentColor = '#000000';
+        let brushSize = 5;
+        let currentTextSize = 5;
+        let startX, startY;
+        let texts = [];
+        let selectedTextIndex = -1;
+
+        downloadButton.textContent = 'Download Image';
+downloadButton.onclick = () => downloadImage();
+document.getElementById('controls').appendChild(downloadButton);
+
+function downloadImage() {
+    // Получаем данные изображения в формате Data URL
+    const dataURL = drawingCanvas.toDataURL('image/png');
+    
+    // Создаем ссылку для скачивания
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'myDrawing.png'; // Замените myDrawing.png на имя файла
+  
+    // Отправляем событие клика, чтобы инициировать скачивание
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+        drawingCanvas.addEventListener('mousedown', (event) => {
+            if (textMode) {
+                addText(event);
+            } else if (drawLineMode) {
+                startX = event.clientX - drawingCanvas.getBoundingClientRect().left;
+                startY = event.clientY - drawingCanvas.getBoundingClientRect().top;
+                isDrawing = true;
+            } else {
+                isDrawing = true;
+                if (isErasing) {
+                    drawingCtx.globalCompositeOperation = 'destination-out';
+                } else {
+                    drawingCtx.globalCompositeOperation = 'source-over';
+                }
+                drawingCtx.beginPath();
+                draw(event);
+            }
+        });
+
+        drawingCanvas.addEventListener('mousemove', (event) => {
+            if (isDrawing && !drawLineMode && !textMode) {
+                draw(event);
+            }
+            drawCursor(event);
+        });
+
+        drawingCanvas.addEventListener('mouseup', (event) => {
+            if (drawLineMode && isDrawing) {
+                const rect = drawingCanvas.getBoundingClientRect();
+                const endX = event.clientX - rect.left;
+                const endY = event.clientY - rect.top;
+                drawLine(startX, startY, endX, endY);
+                isDrawing = false;
+            } else {
+                isDrawing = false;
+                drawingCtx.beginPath();
+            }
+        });
+
+        drawingCanvas.addEventListener('mouseleave', () => {
+            cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+        });
+
+        colorPicker.addEventListener('input', (event) => {
+            currentColor = event.target.value;
+        });
+
+        function changeBrushSize() {
+            const newSize = parseInt(prompt("Enter brush size:", brushSize));
+            if (!isNaN(newSize) && newSize > 0) {
+                brushSize = newSize;
+                currentTextSize = newSize;
+            } else {
+                alert("Please enter a valid brush size.");
+            }
+        }
+
+        function toggleEraser() {
+            isErasing = !isErasing;
+            if (isErasing) {
+                eraserButton.textContent = 'Drawing';
+            } else {
+                eraserButton.textContent = 'Eraser';
+            }
+        }
+
+        function toggleDrawLine() {
+            drawLineMode = !drawLineMode;
+            if (drawLineMode) {
+                drawLineButton.textContent = 'Drawing';
+            } else {
+                drawLineButton.textContent = 'Draw Line';
+            }
+        }
+
+        function toggleTextMode() {
+            textMode = !textMode;
+            if (textMode) {
+                textButton.textContent = 'Drawing';
+            } else {
+                textButton.textContent = 'Text';
+            }
+        }
+
+        function addText(event) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const text = prompt("Enter text:");
+            if (text) {
+                texts.push({ text, x, y, color: currentColor, size: currentTextSize });
+                drawAllTexts();
+            }
+        }
+
+        function draw(event) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            drawingCtx.lineWidth = brushSize;
+            drawingCtx.lineCap = 'round';
+            drawingCtx.strokeStyle = currentColor;
+
+            drawingCtx.lineTo(x, y);
+            drawingCtx.stroke();
+            drawingCtx.beginPath();
+            drawingCtx.moveTo(x, y);
+        }
+
+        function drawCursor(event) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+            cursorCtx.beginPath();
+            cursorCtx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
+            cursorCtx.fillStyle = isErasing ? 'white' : currentColor;
+            cursorCtx.fill();
+            cursorCtx.strokeStyle = 'black';
+            cursorCtx.stroke();
+        }
+
+        function drawLine(x1, y1, x2, y2) {
+            drawingCtx.lineWidth = brushSize;
+            drawingCtx.lineCap = 'round';
+            drawingCtx.strokeStyle = currentColor;
+            drawingCtx.beginPath();
+            drawingCtx.moveTo(x1, y1);
+            drawingCtx.lineTo(x2, y2);
+            drawingCtx.stroke();
+            drawingCtx.closePath();
+        }
+
+        function cleanCanvas() {
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            texts = [];
+        }
+
+        function drawAllTexts() {
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            texts.forEach(({ text, x, y, color, size }) => {
+                drawingCtx.font = `${size * 2}px Arial`;
+                drawingCtx.fillStyle = color;
+                drawingCtx.fillText(text, x, y);
+            });
+        }
+
+        drawingCanvas.addEventListener('dblclick', (event) => {
+            if (textMode) {
+                const rect = drawingCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                selectedTextIndex = texts.findIndex(
+                    ({ x: textX, y: textY }) => Math.abs(textX - x) < 50 && Math.abs(textY - y) < 20
+                );
+                if (selectedTextIndex !== -1) {
+                    const newText = prompt("Edit text:", texts[selectedTextIndex].text);
+                    if (newText !== null) {
+                        texts[selectedTextIndex].text = newText;
+                        drawAllTexts();
+                    }
+                }
+            }
+        });
+
+        drawingCanvas.addEventListener('mousemove', (event) => {
+            if (textMode && selectedTextIndex !== -1) {
+                const rect = drawingCanvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                texts[selectedTextIndex].x = x;
+                texts[selectedTextIndex].y = y;
+                drawAllTexts();
+            } else if (isDrawing && !drawLineMode && !textMode) {
+                draw(event);
+            }
+            drawCursor(event);
+        });
+
+        drawingCanvas.addEventListener('mouseup', () => {
+            selectedTextIndex = -1;
+            if (isDrawing) {
+                isDrawing = false;
+                drawingCtx.beginPath();
+            }
+        });
+
+        drawingCanvas.addEventListener('mouseleave', () => {
+            selectedTextIndex = -1;
+        });
+    </script>
+</
+
+
